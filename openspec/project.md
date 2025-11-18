@@ -18,10 +18,20 @@
 - Public API 稳定，内部可迭代
 
 ### Architecture Patterns
+**三层架构 + 双模块设计**（详见 `ARCHITECTURE.md`）：
+
+1. **数据层**：`backend/shared/db/` 统一 ORM 与 Session
+2. **业务层**：
+   - `backend/ai_agents/`：Agent 编排、算法、RAG、Prompts
+   - `backend/normal_backend/`：Auth、User、Payment、Notification
+3. **API 层**：`app/` FastAPI 路由，依赖注入，不含业务逻辑
+
+**核心模式**：
 - 双 Agent 分层：Orchestrator（意图/槽位/算法路由）与 Explainer（解读生成/评审/输出）
 - 算法插件化：`AlgorithmAdapter` + `AlgorithmRegistry`
 - RAG 解耦：离线构建索引，在线 Top-K 检索
 - Memory：长期（profile/summary）+ 短期（会话）
+- 模块独立：AI 模块与 Normal 模块仅共享数据层，互不依赖
 
 ### Testing Strategy
 - 单元：算法引擎、RAG 检索、工具 I/O Schema 校验
