@@ -66,10 +66,11 @@ class ExplainerAgent:
         question: str,
         question_type: str = "综合",
         rag_chunks: Optional[List[Dict[str, Any]]] = None,
-        user_profile: Optional[Dict[str, Any]] = None
+        user_profile: Optional[Dict[str, Any]] = None,
+        enable_judge: bool = True
     ) -> str:
         """
-        生成占卜解释
+        生成占卜解释（支持 LLM-as-Judge 质量检查）
         
         Args:
             divination_result: 占卜结果（包含 paipan_result 和 interpretation_result）
@@ -77,11 +78,13 @@ class ExplainerAgent:
             question_type: 问题类型
             rag_chunks: RAG 检索到的知识片段（可选）
             user_profile: 用户画像（可选）
+            enable_judge: 是否启用 LLM-as-Judge 评审（默认启用）
             
         Returns:
             生成的解释文本（已应用 Guardrails）
         """
-        logger.info("Generating explanation for question_type: %s", question_type)
+        logger.info("Generating explanation for question_type: %s, judge_enabled: %s", 
+                   question_type, enable_judge)
         
         # 组装 Prompt
         prompt = self._assemble_prompt(
@@ -93,28 +96,28 @@ class ExplainerAgent:
         )
         
         try:
-            # 调用 LLM 生成解释
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {"role": "system", "content": self.system_prompt},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0.7,
-                max_tokens=2000
-            )
+            # Step 1: 生成初稿
+            draft = self._generate_draft(prompt)
             
-            explanation = response.choices[0].message.content
-            
-            if not explanation:
+            if not draft:
                 raise ValueError("LLM 返回空内容")
             
-            logger.debug("Raw explanation generated: %d chars", len(explanation))
+            logger.debug("Draft generated: %d chars", len(draft))
             
-            # 应用输出 Guardrails
-            safe_explanation = self._apply_guardrails(explanation)
+            # Step 2: LLM-as-Judge 评审（可选）
+            if enable_judge:
+                score = self._evaluate_draft(draft, question, divination_result)
+                logger.info("Draft quality score: %.2f", score)
+                
+                # 低于 0.7 分需要重新生成
+                if score < 0.7:
+                    logger.warning("Draft quality below threshold (%.2f < 0.7), regenerating...", score)
+                    draft = self._regenerate(prompt, draft, score)
             
-            # 添加免责声明
+            # Step 3: 应用输出 Guardrails
+            safe_explanation = self._apply_guardrails(draft)
+            
+            # Step 4: 添加免责声明
             final_explanation = self._add_disclaimer(safe_explanation)
             
             logger.info("Explanation generated successfully: %d chars", len(final_explanation))
@@ -124,6 +127,153 @@ class ExplainerAgent:
         except Exception as e:
             logger.error("Error generating explanation: %s", e)
             return self._generate_fallback_explanation(divination_result, question_type)
+    
+    def _generate_draft(self, prompt: str) -> str:
+        """
+        生成初稿
+        
+        Args:
+            prompt: 组装好的 prompt
+            
+        Returns:
+            初稿文本
+        """
+        response = self.client.chat.completions.create(
+            model=self.model,
+            messages=[
+                {"role": "system", "content": self.system_prompt},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.7,
+            max_tokens=2000
+        )
+        
+        return response.choices[0].message.content or ""
+    
+    def _evaluate_draft(
+        self,
+        draft: str,
+        question: str,
+        divination_result: Dict[str, Any]
+    ) -> float:
+        """
+        使用 LLM-as-Judge 评审初稿质量
+        
+        Args:
+            draft: 初稿文本
+            question: 用户问题
+            divination_result: 占卜结果
+            
+        Returns:
+            质量分数 (0.0-1.0)
+        """
+        evaluation_prompt = f"""你是一位专业的占卜解读质量评审员。请评估以下解读的质量。
+
+**用户问题**：
+{question}
+
+**卦象结果**：
+落宫：{divination_result.get('paipan_result', {}).get('luogong', '未知')}
+用神：{divination_result.get('interpretation_result', {}).get('yongshen', '未知')}
+
+**生成的解读**：
+{draft}
+
+**评审标准**：
+1. **准确性** (0-3分)：解读是否符合卦象含义
+2. **完整性** (0-3分)：是否覆盖用户问题的关键方面
+3. **专业性** (0-2分)：措辞是否专业、谨慎，无绝对化断言
+4. **可读性** (0-2分)：结构清晰、逻辑流畅
+
+**输出格式**（仅输出 JSON）：
+{{
+  "accuracy_score": 0-3,
+  "completeness_score": 0-3,
+  "professionalism_score": 0-2,
+  "readability_score": 0-2,
+  "total_score": 0-10,
+  "issues": ["问题1", "问题2"],
+  "suggestions": ["改进建议1", "改进建议2"]
+}}"""
+
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": "你是占卜解读质量评审专家。"},
+                    {"role": "user", "content": evaluation_prompt}
+                ],
+                temperature=0.3,  # 降低随机性，提高稳定性
+                max_tokens=500
+            )
+            
+            result_text = response.choices[0].message.content or "{}"
+            
+            # 提取 JSON（去除可能的 markdown 代码块标记）
+            import json
+            import re
+            json_match = re.search(r'\{.*\}', result_text, re.DOTALL)
+            if json_match:
+                result = json.loads(json_match.group())
+                total_score = result.get("total_score", 5)
+                normalized_score = total_score / 10.0  # 归一化到 0-1
+                
+                logger.debug("Evaluation result: %s", result)
+                return max(0.0, min(1.0, normalized_score))  # 限制在 [0, 1]
+            else:
+                logger.warning("Failed to parse evaluation result, using default 0.8")
+                return 0.8
+                
+        except Exception as e:
+            logger.error("Evaluation failed: %s", e)
+            return 0.8  # 失败时给默认高分，避免阻塞
+    
+    def _regenerate(self, prompt: str, previous_draft: str, score: float) -> str:
+        """
+        根据评审结果重新生成解读
+        
+        Args:
+            prompt: 原始 prompt
+            previous_draft: 之前的初稿
+            score: 评审分数
+            
+        Returns:
+            改进后的解读
+        """
+        regenerate_prompt = f"""之前生成的解读质量评分为 {score:.2f}/1.0，未达到标准。请改进。
+
+**原始要求**：
+{prompt}
+
+**之前的版本**（存在问题）：
+{previous_draft}
+
+**改进要求**：
+1. 确保解读完整覆盖卦象含义
+2. 避免绝对化断言（如"一定"、"必然"等）
+3. 增强专业性和逻辑性
+4. 保持结构清晰
+
+请生成改进后的解读："""
+
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": self.system_prompt},
+                    {"role": "user", "content": regenerate_prompt}
+                ],
+                temperature=0.6,  # 稍微降低创造性
+                max_tokens=2000
+            )
+            
+            improved = response.choices[0].message.content or previous_draft
+            logger.info("Regenerated explanation: %d chars", len(improved))
+            return improved
+            
+        except Exception as e:
+            logger.error("Regeneration failed: %s, using original draft", e)
+            return previous_draft  # 失败时返回原稿
     
     def _assemble_prompt(
         self,
@@ -240,31 +390,64 @@ class ExplainerAgent:
         return "\n".join(lines) if lines else "无"
     
     def _apply_guardrails(self, text: str) -> str:
-        """应用输出 Guardrails（过滤和替换禁用词）"""
+        """应用输出 Guardrails（过滤和替换禁用词、敏感内容）"""
         logger.debug("Applying guardrails to text: %d chars", len(text))
         
         modified_text = text
         replacements_made = []
         
-        # 获取 word_replacements（处理 Pydantic FieldInfo 类型）
+        # 1. 获取 word_replacements（处理 Pydantic FieldInfo 类型）
         word_replacements = getattr(self.settings, 'word_replacements', {})
         if not isinstance(word_replacements, dict):
             word_replacements = {}
         
-        # 替换绝对化措辞
-        for forbidden_word, replacement in word_replacements.items():
+        # 2. 替换绝对化措辞
+        absolute_words = {
+            "一定": "很可能",
+            "必然": "大概率",
+            "绝对": "基本",
+            "肯定": "应该",
+            "永远": "长期",
+            "完全": "大部分",
+            "百分百": "很大程度上",
+            "必须": "建议",
+            "不会": "可能不会",
+            "不可能": "不太可能"
+        }
+        absolute_words.update(word_replacements)  # 合并配置
+        
+        for forbidden_word, replacement in absolute_words.items():
             if forbidden_word in modified_text:
                 modified_text = modified_text.replace(forbidden_word, replacement)
                 replacements_made.append(f"{forbidden_word} -> {replacement}")
         
-        # 检查剩余的禁用词
-        remaining_forbidden = [
-            word for word in self.settings.forbidden_absolute_words
-            if word in modified_text and word not in self.settings.word_replacements
+        # 3. 检查和过滤敏感内容
+        sensitive_patterns = [
+            (r'生死', '重要事务'),
+            (r'死亡|丧命', '不利情况'),
+            (r'疾病|癌症', '健康问题'),
+            (r'暴力|伤害', '冲突'),
+            (r'赌博|彩票', '投资'),
+            (r'犯罪|违法', '不当行为')
         ]
         
+        import re
+        for pattern, replacement in sensitive_patterns:
+            if re.search(pattern, modified_text):
+                modified_text = re.sub(pattern, replacement, modified_text)
+                replacements_made.append(f"{pattern} -> {replacement}")
+                logger.warning("Sensitive content filtered: %s", pattern)
+        
+        # 4. 检查剩余的禁用词
+        forbidden_absolute_words = getattr(self.settings, 'forbidden_absolute_words', [])
+        remaining_forbidden = [
+            word for word in forbidden_absolute_words
+            if word in modified_text and word not in absolute_words
+        ]
+        
+        # 5. 记录日志
         if replacements_made:
-            logger.info("Guardrails replacements: %s", ", ".join(replacements_made))
+            logger.info("Guardrails replacements made: %d changes", len(replacements_made))
         
         if remaining_forbidden:
             logger.warning("Remaining forbidden words detected: %s", ", ".join(remaining_forbidden))

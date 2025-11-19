@@ -10,7 +10,7 @@ from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeou
 
 from .orchestrator import OrchestratorAgent
 from .explainer import ExplainerAgent
-from ..tools.liuren_tool import LiurenTool
+from .registry import AlgorithmRegistry
 from ..tools.rag_tool import RAGTool
 from ..tools.profile_tool import ProfileTool
 from ..tools.history_tool import HistoryTool
@@ -28,6 +28,7 @@ class MasterAgent:
         self,
         orchestrator: OrchestratorAgent,
         explainer: ExplainerAgent,
+        algorithm_registry: AlgorithmRegistry,
         divination_service: DivinationService,
         rag_service: RAGService,
         memory_service: MemoryService,
@@ -39,6 +40,7 @@ class MasterAgent:
         Args:
             orchestrator: Orchestrator Agent 实例
             explainer: Explainer Agent 实例
+            algorithm_registry: 算法注册表实例
             divination_service: 占卜服务实例
             rag_service: RAG 服务实例
             memory_service: 记忆服务实例
@@ -46,16 +48,13 @@ class MasterAgent:
         """
         self.orchestrator = orchestrator
         self.explainer = explainer
+        self.algorithm_registry = algorithm_registry
         self.divination_service = divination_service
         self.rag_service = rag_service
         self.memory_service = memory_service
         self.tool_timeout = tool_timeout
         
         # 初始化工具
-        self.liuren_tool = LiurenTool(
-            divination_service=divination_service,
-            interpretation_service=divination_service.interpretation_service
-        )
         self.rag_tool = RAGTool(rag_service=rag_service)
         self.profile_tool = ProfileTool(memory_service=memory_service)
         self.history_tool = HistoryTool(divination_service=divination_service)
@@ -65,7 +64,7 @@ class MasterAgent:
         
         logger.info("MasterAgent initialized with tool_timeout: %.1f seconds", tool_timeout)
     
-    def run(
+    async def run(
         self,
         user_message: str,
         user_id: int,
@@ -152,13 +151,21 @@ class MasterAgent:
                     }
                 }
             
-            # Step 3: 获取 RAG 增强（可选）
-            logger.info("Step 3: Getting RAG enhancements")
-            rag_chunks = self._call_rag_tool(slots, divination_result)
+            # Step 3 & 4: 并行获取 RAG 增强和用户画像
+            logger.info("Step 3-4: Getting RAG enhancements and user profile in parallel")
+            rag_chunks, user_profile = await asyncio.gather(
+                self._call_rag_tool_async(slots, divination_result),
+                self._call_profile_tool_async(user_id),
+                return_exceptions=True  # 失败不影响整体流程
+            )
             
-            # Step 4: 获取用户画像（可选）
-            logger.info("Step 4: Getting user profile")
-            user_profile = self._call_profile_tool(user_id)
+            # 处理异常返回
+            if isinstance(rag_chunks, Exception):
+                logger.error("RAG tool failed with exception: %s", rag_chunks)
+                rag_chunks = None
+            if isinstance(user_profile, Exception):
+                logger.error("Profile tool failed with exception: %s", user_profile)
+                user_profile = None
             
             # Step 5: Explainer 生成解释
             logger.info("Step 5: Calling Explainer")
@@ -215,7 +222,7 @@ class MasterAgent:
         user_id: int
     ) -> Optional[Dict[str, Any]]:
         """
-        调用占卜工具（带超时保护）
+        通过算法注册表调用占卜算法（带超时保护）
         
         Args:
             slots: 槽位信息
@@ -225,38 +232,62 @@ class MasterAgent:
             占卜结果或 None
         """
         try:
-            # 使用线程池执行（超时控制）
-            future = self.executor.submit(
-                self.liuren_tool.qigua_and_jiegua,
-                number1=int(slots.get("num1", 1)),
-                number2=int(slots.get("num2", 1)),
-                question_type=slots.get("question_type", "综合"),
-                gender=slots.get("gender", "男"),
-                user_id=user_id
-            )
+            # Step 1: 算法路由
+            algorithm_hint = slots.get("algorithm_hint", "xlr-liuren")
+            adapter = self.algorithm_registry.route(algorithm_hint)
             
-            result = future.result(timeout=self.tool_timeout)
+            if not adapter:
+                # 降级到默认算法
+                adapter = self.algorithm_registry.get("xlr-liuren")
+                if not adapter:
+                    logger.error("No algorithm adapter available")
+                    return {
+                        "success": False,
+                        "error": "算法不可用"
+                    }
+                logger.warning("Algorithm hint '%s' not found, using default xlr-liuren", algorithm_hint)
             
-            # 检查工具返回的 success 状态
-            if isinstance(result, dict) and not result.get("success", True):
+            logger.info("Using algorithm: %s", adapter.get_name())
+            
+            # Step 2: 准备算法输入（统一格式）
+            algorithm_inputs = {
+                "operation": "qigua",  # 或从 slots 获取
+                "number1": int(slots.get("num1", 1)),
+                "number2": int(slots.get("num2", 1)),
+                "gender": slots.get("gender", "男"),
+                "question_type": slots.get("question_type", "综合"),
+                "qigua_time": slots.get("ask_time"),  # 如果有的话
+            }
+            
+            # Step 3: 验证输入
+            try:
+                adapter.validate_input(algorithm_inputs)
+            except ValueError as ve:
+                logger.error("Algorithm input validation failed: %s", ve)
                 return {
                     "success": False,
-                    "error": result.get("error", "占卜失败")
+                    "error": f"输入参数错误：{ve}"
                 }
             
+            # Step 4: 执行算法（带超时）
+            future = self.executor.submit(adapter.run, algorithm_inputs)
+            algorithm_result = future.result(timeout=self.tool_timeout)
+            
+            # Step 5: 标准化输出
             return {
                 "success": True,
-                "result": result
+                "result": algorithm_result,
+                "algorithm_id": adapter.get_name()
             }
             
         except FuturesTimeoutError:
-            logger.error("Divination tool timeout after %d seconds", self.tool_timeout)
+            logger.error("Algorithm execution timeout after %d seconds", self.tool_timeout)
             return {
                 "success": False,
-                "error": "占卜超时"
+                "error": "算法执行超时"
             }
         except Exception as e:
-            logger.error("Divination tool failed: %s", e)
+            logger.error("Algorithm execution failed: %s", e, exc_info=True)
             return {
                 "success": False,
                 "error": str(e)
@@ -342,6 +373,46 @@ class MasterAgent:
         except Exception as e:
             logger.error("Profile tool failed: %s", e)
             return None
+    
+    async def _call_rag_tool_async(
+        self,
+        slots: Dict[str, Any],
+        divination_result: Dict[str, Any]
+    ) -> Optional[list]:
+        """
+        异步调用 RAG 工具（用于并行执行）
+        
+        Args:
+            slots: 槽位信息
+            divination_result: 占卜结果
+            
+        Returns:
+            RAG chunks 列表或 None
+        """
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(
+            self.executor,
+            self._call_rag_tool,
+            slots,
+            divination_result
+        )
+    
+    async def _call_profile_tool_async(self, user_id: int) -> Optional[Dict[str, Any]]:
+        """
+        异步调用用户画像工具（用于并行执行）
+        
+        Args:
+            user_id: 用户 ID
+            
+        Returns:
+            用户画像或 None
+        """
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(
+            self.executor,
+            self._call_profile_tool,
+            user_id
+        )
     
     def _save_conversation_summary(
         self,

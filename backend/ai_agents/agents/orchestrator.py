@@ -85,7 +85,7 @@ class OrchestratorAgent:
         follow_up_count: int = 0
     ) -> Dict[str, Any]:
         """
-        处理用户输入，进行意图识别和槽位填充
+        处理用户输入，进行意图识别和槽位填充（含输入 Guardrails）
         
         Args:
             user_input: 用户输入文本
@@ -97,6 +97,16 @@ class OrchestratorAgent:
             包含意图、槽位、追问信息的字典
         """
         logger.info("Processing user input with follow_up_count=%d", follow_up_count)
+        
+        # Step 0: 输入 Guardrails 验证
+        validation_result = self._validate_input(user_input)
+        if not validation_result["valid"]:
+            return {
+                "intent": "error",
+                "ready_to_execute": False,
+                "error_message": validation_result["error_message"],
+                "slots": current_slots or {}
+            }
         
         # 检查追问次数限制
         if follow_up_count >= self.max_follow_ups:
@@ -315,3 +325,71 @@ class OrchestratorAgent:
             "follow_up_count": 0,
             "error": "processing_error"
         }
+    
+    def _validate_input(self, user_input: str) -> Dict[str, Any]:
+        """
+        输入 Guardrails：验证用户输入合法性
+        
+        Args:
+            user_input: 用户输入文本
+            
+        Returns:
+            验证结果字典 {"valid": bool, "error_message": str}
+        """
+        # 1. 长度检查
+        if not user_input or len(user_input.strip()) == 0:
+            return {
+                "valid": False,
+                "error_message": "请输入您的问题"
+            }
+        
+        if len(user_input) > 1000:
+            return {
+                "valid": False,
+                "error_message": "问题过长，请精简到 1000 字以内"
+            }
+        
+        # 2. 禁止特殊字符和 SQL 注入模式
+        import re
+        dangerous_patterns = [
+            r"<script[^>]*>",  # XSS
+            r"DROP\s+TABLE",   # SQL injection
+            r"DELETE\s+FROM",
+            r"INSERT\s+INTO",
+            r"UPDATE\s+.*\s+SET"
+        ]
+        
+        for pattern in dangerous_patterns:
+            if re.search(pattern, user_input, re.IGNORECASE):
+                logger.warning("Dangerous pattern detected in input: %s", pattern)
+                return {
+                    "valid": False,
+                    "error_message": "输入包含非法字符，请使用自然语言提问"
+                }
+        
+        # 3. 敏感词过滤
+        forbidden_topics = [
+            "政治", "暴力", "色情", "赌博", "毒品", "自杀", "犯罪",
+            "生死", "疾病", "医疗", "股票", "彩票"
+        ]
+        
+        for topic in forbidden_topics:
+            if topic in user_input:
+                logger.warning("Forbidden topic detected: %s", topic)
+                return {
+                    "valid": False,
+                    "error_message": f"抱歉，本系统不支持关于「{topic}」的问题。占卜仅供娱乐参考，请勿用于重大决策。"
+                }
+        
+        # 4. 数字范围预检查（如果包含数字）
+        numbers = re.findall(r'\d+', user_input)
+        for num_str in numbers:
+            num = int(num_str)
+            if num > 1000000:  # 异常大的数字
+                return {
+                    "valid": False,
+                    "error_message": "输入包含异常数字，请检查后重试"
+                }
+        
+        # 通过所有检查
+        return {"valid": True, "error_message": ""}
