@@ -366,8 +366,7 @@
 
 ## 🎯 阶段 5：API 路由与端到端测试
 
-### 提示词 5.1 - 实现 FastAPI 路由
-
+### 提示词 5.1 - 实现 FastAPI 路由 ✅
 
 请实现 FastAPI 路由层，对接前端请求：
 
@@ -395,6 +394,13 @@
 - 必须使用 FastAPI 的依赖注入（Depends(get_db), Depends(get_current_user)）
 - 所有接口必须有 Request/Response Schema（使用 Pydantic）
 - 异常必须统一处理（HTTPException）
+
+**状态：✅ 已完成（10/10 tests passed）**
+- 创建了 backend/shared/db/session.py（SessionLocal 工厂）
+- 实现了 app/dependencies.py（get_db、get_current_user、get_master_agent、get_divination_service）
+- 实现了 app/routes/ai.py（POST /ai/divination、GET /ai/history）
+- 创建了 app/main.py（FastAPI app、CORS、路由注册）
+- 测试覆盖：健康检查、完整流程、追问、错误处理、无效请求、历史查询、分页验证
 ```
 
 ### 提示词 5.2 - 端到端测试与部署验证
