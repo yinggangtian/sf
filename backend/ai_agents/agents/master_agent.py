@@ -102,7 +102,7 @@ class MasterAgent:
             logger.debug("Orchestrator result: %s", orchestrator_result)
             
             # 检查是否需要追问
-            if orchestrator_result.get("status") == "need_clarification":
+            if orchestrator_result.get("clarification_needed"):
                 return {
                     "reply": orchestrator_result.get("clarification_message", "请提供更多信息"),
                     "status": "clarification_needed",
@@ -113,7 +113,7 @@ class MasterAgent:
                 }
             
             # 检查是否就绪执行
-            if orchestrator_result.get("status") != "ready_to_execute":
+            if not orchestrator_result.get("ready_to_execute"):
                 error_msg = orchestrator_result.get("error_message", "无法理解您的问题")
                 return {
                     "reply": error_msg,
@@ -190,6 +190,8 @@ class MasterAgent:
                 "meta": {
                     "intent": intent,
                     "slots": slots,
+                    "session_id": session_id,
+                    "user_id": user_id,
                     "processing_time": processing_time,
                     "rag_used": len(rag_chunks) > 0 if rag_chunks else False,
                     "profile_used": user_profile is not None

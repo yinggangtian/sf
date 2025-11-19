@@ -159,7 +159,8 @@ class TestMasterAgentFlow:
         """测试完整占卜流程（Orchestrator → Tool → Explainer）"""
         # Mock Orchestrator 返回完整槽位
         mock_orchestrator.process.return_value = {
-            "status": "ready_to_execute",
+            "ready_to_execute": True,
+            "clarification_needed": False,
             "intent": "divination",
             "slots": {
                 "num1": 3,
@@ -208,7 +209,8 @@ class TestMasterAgentFlow:
         """测试需要追问的场景"""
         # Mock Orchestrator 返回缺失槽位
         mock_orchestrator.process.return_value = {
-            "status": "need_clarification",
+            "clarification_needed": True,
+            "ready_to_execute": False,
             "clarification_message": "请问您想问什么类型的问题？（事业/财运/感情）",
             "missing_slots": ["question_type", "num1", "num2"]
         }
@@ -234,7 +236,8 @@ class TestMasterAgentFlow:
         """测试工具超时处理"""
         # Mock Orchestrator 返回完整槽位
         mock_orchestrator.process.return_value = {
-            "status": "ready_to_execute",
+            "ready_to_execute": True,
+            "clarification_needed": False,
             "intent": "divination",
             "slots": {
                 "num1": 3,
@@ -267,7 +270,8 @@ class TestMasterAgentFlow:
         """测试工具调用失败"""
         # Mock Orchestrator 返回完整槽位
         mock_orchestrator.process.return_value = {
-            "status": "ready_to_execute",
+            "ready_to_execute": True,
+            "clarification_needed": False,
             "intent": "divination",
             "slots": {
                 "num1": 3,
@@ -304,7 +308,8 @@ class TestMasterAgentFlow:
         """测试 RAG 降级（不影响主流程）"""
         # Mock Orchestrator 返回完整槽位
         mock_orchestrator.process.return_value = {
-            "status": "ready_to_execute",
+            "ready_to_execute": True,
+            "clarification_needed": False,
             "intent": "divination",
             "slots": {
                 "num1": 3,
@@ -347,7 +352,8 @@ class TestMasterAgentFlow:
         """测试用户画像降级（不影响主流程）"""
         # Mock Orchestrator 返回完整槽位
         mock_orchestrator.process.return_value = {
-            "status": "ready_to_execute",
+            "ready_to_execute": True,
+            "clarification_needed": False,
             "intent": "divination",
             "slots": {
                 "num1": 3,
@@ -385,7 +391,8 @@ class TestMasterAgentFlow:
         """测试不支持的意图"""
         # Mock Orchestrator 返回不支持的意图
         mock_orchestrator.process.return_value = {
-            "status": "ready_to_execute",
+            "ready_to_execute": True,
+            "clarification_needed": False,
             "intent": "history",  # 暂不支持
             "slots": {}
         }
