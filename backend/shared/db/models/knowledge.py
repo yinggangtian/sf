@@ -78,6 +78,24 @@ class DiZhi(Base):
         return f"<DiZhi(name={self.name}, order={self.order}, wuxing={self.wuxing})>"
 
 
+class TianGan(Base):
+    """天干数据表"""
+    __tablename__ = "tian_gan"
+
+    id = Column(Integer, primary_key=True, index=True, comment="天干ID")
+    name = Column(String(10), nullable=False, unique=True, comment="天干名称")
+    order = Column(Integer, nullable=False, unique=True, index=True, comment="顺序(1-10)")
+    wuxing = Column(String(20), nullable=False, comment="五行属性")
+    yin_yang = Column(String(10), nullable=False, comment="阴阳属性")
+    meaning = Column(Text, nullable=True, comment="含义描述")
+    attributes = Column(JSON, nullable=True, comment="其他属性(JSON格式)")
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="创建时间")
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), comment="更新时间")
+
+    def __repr__(self):
+        return f"<TianGan(name={self.name}, order={self.order}, yin_yang={self.yin_yang})>"
+
+
 class WuxingRelation(Base):
     """五行关系表"""
     __tablename__ = "wuxing_relations"
@@ -91,3 +109,13 @@ class WuxingRelation(Base):
     
     def __repr__(self):
         return f"<WuxingRelation({self.element1}-{self.relation}-{self.element2})>"
+
+
+__all__ = [
+    "Gong",
+    "Shou",
+    "Qin",
+    "DiZhi",
+    "TianGan",
+    "WuxingRelation",
+]

@@ -3,7 +3,7 @@
 包含用户基本信息、用户画像等表定义
 """
 
-from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean
+from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, ForeignKey
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from ..base import Base
@@ -42,7 +42,7 @@ class UserProfile(Base):
     __tablename__ = "user_profiles"
     
     id = Column(Integer, primary_key=True, index=True, comment="画像ID")
-    user_id = Column(Integer, nullable=False, unique=True, index=True, comment="用户ID")
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, unique=True, index=True, comment="用户ID")
     
     # 基本信息
     gender = Column(String(10), nullable=True, comment="性别")

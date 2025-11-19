@@ -5,7 +5,7 @@
 
 from .user import User, UserProfile
 from .divination import DivinationRecord, ConversationSummary, FindObjectRecord
-from .knowledge import Gong, Shou, Qin, DiZhi, WuxingRelation
+from .knowledge import Gong, Shou, Qin, DiZhi, TianGan, WuxingRelation
 
 __all__ = [
     # 用户模型
@@ -22,5 +22,6 @@ __all__ = [
     "Shou",
     "Qin",
     "DiZhi",
+    "TianGan",
     "WuxingRelation",
 ]
