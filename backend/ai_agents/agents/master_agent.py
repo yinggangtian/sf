@@ -287,8 +287,15 @@ class MasterAgent:
             
             if qigua_data.get("luogong_name"):
                 keywords.append(qigua_data["luogong_name"])
-            if jiegua_data.get("yongshen"):
-                keywords.append(jiegua_data["yongshen"])
+            
+            # yongshen 可能是列表或字符串
+            yongshen = jiegua_data.get("yongshen")
+            if yongshen:
+                if isinstance(yongshen, list):
+                    keywords.extend([str(y) for y in yongshen if y])
+                else:
+                    keywords.append(str(yongshen))
+            
             if slots.get("question_type"):
                 keywords.append(slots["question_type"])
             

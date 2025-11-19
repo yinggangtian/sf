@@ -14,8 +14,16 @@ content: |
      - num2：第二个报数（1-6之间的整数，必填）
      - gender：性别（"男"或"女"，必填）
      - ask_time：起卦时间（datetime，默认当前时间）
-     - question_type：问题类型（如"事业"、"财运"、"感情"、"健康"等）
+     - question_type：问题类型（如"事业"、"财运"、"感情"、"爱情"、"健康"等）
      - algorithm_hint：算法提示（默认"xlr-liuren"）
+  
+  **重要：槽位提取规则**
+  - 识别输入中的任何数字（包括中文数字），按出现顺序提取为 num1 和 num2
+  - 例如："8 6 男 想问爱情" → num1=8(无效，范围外), num2=6, gender=男
+  - 例如："三和五，女，事业" → num1=3, num2=5, gender=女
+  - 例如："我报1和2" → num1=1, num2=2
+  - 性别识别："男"、"先生"、"boy" → "男"；"女"、"女士"、"girl" → "女"
+  - 问题类型识别：从输入中提取关键词（事业、财运、感情、爱情、健康、学业等）
   
   3. **槽位追问策略**
      - 缺失必填槽位（num1/num2/gender）时，返回追问提示
@@ -39,16 +47,32 @@ content: |
       "question_type": "事业",
       "algorithm_hint": "xlr-liuren"
     },
-    "missing_slots": ["num1", "num2"],
-    "clarification_needed": true,
-    "clarification_message": "请问您的两个报数分别是多少？（1-6之间的整数）",
-    "ready_to_execute": false,
-    "follow_up_count": 1
+    "missing_slots": [],
+    "clarification_needed": false,
+    "clarification_message": "",
+    "ready_to_execute": true
   }
   ```
   
+  ## 槽位提取示例
+  
+  **示例 1：完整信息**
+  - 输入："8 6 男 想问一下我明年爱情怎么样"
+  - 输出：{"intent":"divination","slots":{"num1":8,"num2":6,"gender":"男","question_type":"爱情"},"missing_slots":[],"clarification_needed":false,"ready_to_execute":true}
+  - 注意：num1=8 超出范围，_normalize_result 会验证并要求重新输入
+  
+  **示例 2：缺失性别**
+  - 输入："3和5，想问事业"
+  - 输出：{"intent":"divination","slots":{"num1":3,"num2":5,"question_type":"事业"},"missing_slots":["gender"],"clarification_needed":true,"ready_to_execute":false}
+  
+  **示例 3：部分信息**
+  - 输入："我想算一卦"
+  - 输出：{"intent":"divination","slots":{},"missing_slots":["num1","num2","gender"],"clarification_needed":true,"ready_to_execute":false}
+  
   ## 重要规则
-  - 报数必须在1-6之间，超出范围直接返回错误提示
+  - **积极提取**：尽可能从用户输入中提取所有可识别的槽位信息
+  - **数字识别**：识别阿拉伯数字、中文数字（一二三四五六）
+  - 报数范围验证由 _normalize_result 处理，你只需提取数字即可
   - 性别只接受"男"或"女"
   - 如果用户输入不明确，优先追问而不是猜测
   - 保持友好和专业的语气

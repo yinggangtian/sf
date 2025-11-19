@@ -96,8 +96,16 @@ class PaipanEngine:
         """
         luogong = qigua_info.luogong
         
+        # 计算体用关系
+        ti_gong = qigua_info.number1  # 体宫 = 第一个数
+        yong_gong = qigua_info.number2  # 用宫 = 第二个数
+        
+        # 更新 qigua_info 中的体用信息
+        qigua_info.ti_gong = ti_gong
+        qigua_info.yong_gong = yong_gong
+        
         # 生成六宫排盘数据
-        paipan_data = self._generate_liugong_paipan(luogong, qigua_info.shichen_info)
+        paipan_data = self._generate_liugong_paipan(luogong, qigua_info.shichen_info, ti_gong, yong_gong)
         
         # 添加六兽排盘
         paipan_data = self._add_liushou_paipan(paipan_data, luogong)
@@ -111,13 +119,15 @@ class PaipanEngine:
             creation_time=datetime.now()
         )
         
-    def _generate_liugong_paipan(self, luogong: int, shichen_info: Dict[str, Any]) -> Dict[str, Any]:
+    def _generate_liugong_paipan(self, luogong: int, shichen_info: Dict[str, Any], ti_gong: int = None, yong_gong: int = None) -> Dict[str, Any]:
         """
         生成六宫排盘数据
         
         Args:
             luogong: 落宫位置
             shichen_info: 时辰信息
+            ti_gong: 体宫位置（主位，第一个数）
+            yong_gong: 用宫位置（客位，第二个数）
             
         Returns:
             六宫排盘数据字典
@@ -136,12 +146,35 @@ class PaipanEngine:
                     "wuxing": gong.wuxing,
                     "meaning": gong.meaning,
                     "is_luogong": pos == luogong,
+                    "is_ti_gong": pos == ti_gong,  # 标记体宫
+                    "is_yong_gong": pos == yong_gong,  # 标记用宫
                     "attributes": gong.attributes or {}
                 }
                 
         # 添加时辰信息到排盘
         gong_paipan["shichen_info"] = shichen_info
         gong_paipan["luogong_position"] = luogong
+        gong_paipan["ti_gong_position"] = ti_gong  # 体宫位置
+        gong_paipan["yong_gong_position"] = yong_gong  # 用���位置
+        
+        # 获取体用宫的详细信息
+        if ti_gong:
+            ti_gong_obj = self.knowledge_base.get_gong_by_position(ti_gong)
+            gong_paipan["ti_gong_info"] = {
+                "name": ti_gong_obj.name,
+                "position": ti_gong,
+                "wuxing": ti_gong_obj.wuxing,
+                "meaning": ti_gong_obj.meaning
+            } if ti_gong_obj else None
+        
+        if yong_gong:
+            yong_gong_obj = self.knowledge_base.get_gong_by_position(yong_gong)
+            gong_paipan["yong_gong_info"] = {
+                "name": yong_gong_obj.name,
+                "position": yong_gong,
+                "wuxing": yong_gong_obj.wuxing,
+                "meaning": yong_gong_obj.meaning
+            } if yong_gong_obj else None
         
         return {"liugong": gong_paipan}
         

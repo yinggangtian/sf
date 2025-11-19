@@ -29,6 +29,8 @@ class QiguaInfo(BaseModel):
     qigua_time: datetime = Field(..., description="起卦时间")
     luogong: int = Field(..., ge=1, le=6, description="落宫位置(1-6)")
     shichen_info: Dict[str, Any] = Field(..., description="时辰信息")
+    ti_gong: Optional[int] = Field(None, ge=1, le=6, description="体宫位置（第一个数，主位）")
+    yong_gong: Optional[int] = Field(None, ge=1, le=6, description="用宫位置（第二个数，客位）")
 
     model_config = ConfigDict(json_encoders={datetime: lambda v: v.isoformat()})
 
