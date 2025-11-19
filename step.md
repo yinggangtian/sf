@@ -121,9 +121,7 @@
 - 使用真实的 KnowledgeBase 数据（从数据库加载）
 - 验证适配器的 validate_input 和 validate_output 方法
 - 确保返回结果符合 @/openspec/specs/algorithm-plugin/spec.md
-```
 
----
 
 ## 🎯 阶段 2：服务层（Services）实现
 

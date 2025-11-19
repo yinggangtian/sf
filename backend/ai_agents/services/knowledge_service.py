@@ -3,7 +3,7 @@
 负责知识库数据的加载、缓存和管理
 """
 
-from typing import Optional, Dict, List
+from typing import Optional, Dict, List, Any
 from sqlalchemy.orm import Session
 
 from ..xlr.liuren.utils import KnowledgeBase
@@ -192,7 +192,3 @@ class KnowledgeService:
             "火": {"土": "生", "金": "克", "水": "克我", "木": "生我", "火": "同"},
             "土": {"金": "生", "水": "克", "木": "克我", "火": "生我", "土": "同"}
         }
-
-
-# 为了避免 circular import，定义 Any 类型
-from typing import Any
