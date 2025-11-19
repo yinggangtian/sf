@@ -228,3 +228,53 @@ class LiurenTool:
         shichen = paipan_result.qigua_info.shichen_info.get("dizhi", "")
         
         return f"落宫为{luogong_name}，时辰为{shichen}时"
+    
+    @staticmethod
+    def get_tool_schema() -> Dict[str, Any]:
+        """
+        返回工具的 JSON Schema（用于 OpenAI Function Calling）
+        
+        Returns:
+            工具 Schema 字典
+        """
+        return {
+            "type": "function",
+            "function": {
+                "name": "perform_liuren_divination",
+                "description": "执行小六壬起卦和解卦，根据两个报数（1-6）、性别、问题类型等信息进行占卜分析。",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "number1": {
+                            "type": "integer",
+                            "description": "第一个报数，用于确定落宫位置",
+                            "minimum": 1,
+                            "maximum": 6
+                        },
+                        "number2": {
+                            "type": "integer",
+                            "description": "第二个报数，用于确定时辰信息",
+                            "minimum": 1,
+                            "maximum": 6
+                        },
+                        "question_type": {
+                            "type": "string",
+                            "description": "问题类型",
+                            "enum": ["事业", "财运", "感情", "健康", "考试", "寻物", "综合"],
+                            "default": "综合"
+                        },
+                        "gender": {
+                            "type": "string",
+                            "description": "性别，影响用神选择",
+                            "enum": ["男", "女"],
+                            "default": "男"
+                        },
+                        "user_id": {
+                            "type": "integer",
+                            "description": "用户 ID（可选），提供后会保存占卜记录"
+                        }
+                    },
+                    "required": ["number1", "number2", "question_type", "gender"]
+                }
+            }
+        }
