@@ -99,6 +99,30 @@ class Settings(BaseSettings):
     max_item_description_length: int = Field(default=200, description="寻物描述最大长度")
     max_records_per_user: int = Field(default=1000, description="用户最大记录数")
     
+    # ==================== Guardrails 配置 ====================
+    # 禁用的绝对化措辞
+    forbidden_absolute_words: List[str] = Field(
+        default=["一定会", "必然", "绝对", "肯定会", "百分之百", "保证"],
+        description="禁用的绝对化措辞"
+    )
+    # 需要替换的措辞映射
+    word_replacements: dict = Field(
+        default={
+            "一定会": "很可能会",
+            "必然": "大概率",
+            "绝对": "非常",
+            "肯定会": "有较大可能",
+            "百分之百": "很大程度上",
+            "保证": "预计"
+        },
+        description="措辞替换映射"
+    )
+    # 免责声明
+    disclaimer_text: str = Field(
+        default="以上解读仅供参考，不构成任何承诺或保证。实际结果会受多种因素影响，请理性看待。",
+        description="免责声明文本"
+    )
+    
     # ==================== API 配置 ====================
     api_rate_limit: int = Field(default=100, description="API速率限制(请求/分钟)")
     default_page_size: int = Field(default=10, description="默认分页大小")

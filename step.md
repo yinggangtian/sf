@@ -246,7 +246,7 @@
 - 所有工具调用必须记录日志
 ```
 
-### 提示词 3.2 - 实现 Explainer Agent
+### 提示词 3.2 - 实现 Explainer Agent ✅
 
 ```
 请实现 Explainer Agent，负责生成人类可读的占卜解释：
@@ -276,6 +276,11 @@
 - 必须使用模板变量替换（不能在 Prompt 中硬编码数据）
 - Guardrails 规则必须可配置（在 settings.py 中定义禁用词列表）
 - 生成的解释必须包含：宫位分析、用神解释、综合建议
+
+**状态：✅ 已完成（9/9 tests passed）**
+- 实现了 ExplainerAgent 类（加载 YAML prompt、MD template、变量替换、LLM 调用、Guardrails 过滤）
+- 配置了 Guardrails（6 个禁用词、6 个替换规则、免责声明）
+- 测试覆盖：基础解释、RAG 增强、用户画像、Guardrails 过滤、免责声明、降级处理、模板变量替换
 ```
 
 ---
