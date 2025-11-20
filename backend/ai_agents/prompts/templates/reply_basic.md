@@ -24,6 +24,9 @@
 **六兽排盘**：
 {liushou_paipan}
 
+**六亲排盘**：
+{liuqin_paipan}
+
 ### 解卦结果
 
 **用神分析**：

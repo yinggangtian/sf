@@ -286,23 +286,32 @@ class ExplainerAgent:
         """组装 Prompt（使用模板变量替换）"""
         # 提取排盘结果
         paipan_result = divination_result.get("paipan_result", {})
+        # paipan_result might be nested in paipan_data if it came from engine directly, 
+        # but usually it's flattened or structured by adapter.
+        # Adapter returns: "paipan_result": paipan_result.model_dump()
+        # PaipanResult model has "paipan_data".
+        # So paipan_result here is the dict of PaipanResult.
+        # We need to access paipan_data inside it.
+        paipan_data = paipan_result.get("paipan_data", {})
+        
         interpretation_result = divination_result.get("interpretation_result", {})
         
         # 构建变量字典
         variables = {
             "question": question,
             "question_type": question_type,
-            "ask_time": paipan_result.get("ask_time", "未知"),
-            "gender": paipan_result.get("gender", "未知"),
-            "num1": paipan_result.get("num1", "?"),
-            "num2": paipan_result.get("num2", "?"),
-            "luogong": paipan_result.get("luogong", "未知"),
-            "luogong_wuxing": paipan_result.get("luogong_wuxing", ""),
-            "shichen": paipan_result.get("shichen", "未知"),
-            "shichen_dizhi": paipan_result.get("shichen_dizhi", ""),
+            "ask_time": paipan_result.get("qigua_info", {}).get("qigua_time", "未知"),
+            "gender": paipan_result.get("qigua_info", {}).get("gender", "未知"), # gender might be in request not qigua_info
+            "num1": paipan_result.get("qigua_info", {}).get("number1", "?"),
+            "num2": paipan_result.get("qigua_info", {}).get("number2", "?"),
+            "luogong": paipan_result.get("qigua_info", {}).get("luogong", "未知"),
+            "luogong_wuxing": "", # Need to extract from paipan_data
+            "shichen": paipan_result.get("qigua_info", {}).get("shichen_info", {}).get("hour", "未知"),
+            "shichen_dizhi": paipan_result.get("qigua_info", {}).get("shichen_info", {}).get("dizhi", ""),
             "yongshen": interpretation_result.get("yongshen", "未知"),
-            "liugong_paipan": self._format_liugong_paipan(paipan_result.get("liugong_paipan", [])),
-            "liushou_paipan": self._format_liushou_paipan(paipan_result.get("liushou_paipan", [])),
+            "liugong_paipan": self._format_liugong_paipan(paipan_data.get("liugong", {})),
+            "liushou_paipan": self._format_liushou_paipan(paipan_data.get("liushou", {})),
+            "liuqin_paipan": self._format_liuqin_paipan(paipan_data.get("liuqin", {})),
             "yongshen_analysis": interpretation_result.get("yongshen_analysis", ""),
             "gong_relations": self._format_gong_relations(interpretation_result.get("gong_relations", {})),
             "comprehensive_interpretation": interpretation_result.get("comprehensive_interpretation", ""),
@@ -318,30 +327,73 @@ class ExplainerAgent:
         
         return prompt
     
-    def _format_liugong_paipan(self, liugong_paipan: List[Dict]) -> str:
+    def _format_liugong_paipan(self, liugong_paipan: Any) -> str:
         """格式化六宫排盘"""
         if not liugong_paipan:
             return "无数据"
         
+        items = []
+        if isinstance(liugong_paipan, dict):
+            # Filter out non-gong keys like 'shichen_info'
+            for key, value in liugong_paipan.items():
+                if key.startswith("gong_") and isinstance(value, dict):
+                    items.append(value)
+        elif isinstance(liugong_paipan, list):
+            items = liugong_paipan
+            
+        # Sort by position
+        items.sort(key=lambda x: x.get("position", 0))
+        
         lines = []
-        for gong in liugong_paipan:
+        for gong in items:
             position = gong.get("position", "?")
             name = gong.get("name", "?")
             wuxing = gong.get("wuxing", "?")
-            lines.append(f"{position}. {name}（{wuxing}）")
+            dizhi_info = gong.get("dizhi_info", {})
+            dizhi_str = f" - {dizhi_info.get('name', '')}" if dizhi_info else ""
+            lines.append(f"{position}. {name}（{wuxing}）{dizhi_str}")
         
         return "\n".join(lines)
     
-    def _format_liushou_paipan(self, liushou_paipan: List[Dict]) -> str:
+    def _format_liushou_paipan(self, liushou_paipan: Any) -> str:
         """格式化六兽排盘"""
         if not liushou_paipan:
             return "无数据"
+            
+        items = []
+        if isinstance(liushou_paipan, dict):
+            for key, value in liushou_paipan.items():
+                if key.startswith("shou_") and isinstance(value, dict):
+                    items.append(value)
+        elif isinstance(liushou_paipan, list):
+            items = liushou_paipan
+            
+        # Sort by position
+        items.sort(key=lambda x: x.get("gong_position", 0))
         
         lines = []
-        for shou in liushou_paipan:
-            position = shou.get("position", "?")
+        for shou in items:
+            position = shou.get("gong_position", "?")
             name = shou.get("name", "?")
             lines.append(f"{position}. {name}")
+        
+        return "\n".join(lines)
+    
+    def _format_liuqin_paipan(self, liuqin_paipan: Dict[str, Any]) -> str:
+        """格式化六亲排盘"""
+        if not liuqin_paipan:
+            return "无数据"
+        
+        lines = []
+        # liuqin_paipan is a dict like {"qin_1": {...}, "qin_2": {...}}
+        # Sort by position
+        sorted_items = sorted(liuqin_paipan.items(), key=lambda x: int(x[0].split('_')[1]))
+        
+        for key, qin in sorted_items:
+            position = qin.get("gong_position", "?")
+            name = qin.get("name", "?")
+            dizhi_wuxing = qin.get("dizhi_wuxing", "?")
+            lines.append(f"{position}. {name}（{dizhi_wuxing}）")
         
         return "\n".join(lines)
     
