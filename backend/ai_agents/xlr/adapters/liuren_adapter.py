@@ -58,8 +58,8 @@ class LiurenAdapter(AlgorithmAdapter):
                 raise ValueError("起卦需要 number1 和 number2 参数")
             
             num1, num2 = inputs["number1"], inputs["number2"]
-            if not (1 <= num1 <= 6 and 1 <= num2 <= 6):
-                raise ValueError("报数必须在 1-6 之间")
+            if not (num1 >= 1 and num2 >= 1):
+                raise ValueError("报数必须是正整数")
                 
             # qigua_time 可选，默认当前时间
             if "qigua_time" in inputs:

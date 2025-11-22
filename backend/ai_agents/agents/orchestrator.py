@@ -201,8 +201,8 @@ class OrchestratorAgent:
             if num_field in slots and slots[num_field] is not None:
                 try:
                     num_value = int(slots[num_field])
-                    if not (1 <= num_value <= 6):
-                        validation_errors.append(f"{num_field}必须在1-6之间")
+                    if num_value < 1:
+                        validation_errors.append(f"{num_field}必须是正整数")
                         invalid_slots.append(num_field)
                         # 移除无效值
                         del slots[num_field]

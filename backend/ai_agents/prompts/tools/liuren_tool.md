@@ -12,13 +12,13 @@
 
 - **number1** (integer)
   - 描述：第一个报数
-  - 范围：1-6
-  - 说明：用于确定落宫位置
+  - 范围：任意整数
+  - 说明：用于确定落宫位置（算法会自动取模）
 
 - **number2** (integer)
   - 描述：第二个报数
-  - 范围：1-6
-  - 说明：用于确定时辰信息
+  - 范围：任意整数
+  - 说明：用于确定时辰信息（算法会自动取模）
 
 - **question_type** (string)
   - 描述：问题类型
@@ -77,7 +77,7 @@
 
 ## 注意事项
 
-1. **数字范围**：number1 和 number2 必须在 1-6 范围内，超出范围将返回错误
+1. **数字范围**：number1 和 number2 支持任意正整数，算法会自动取模处理
 2. **问题类型**：建议明确指定问题类型，以便获得更精准的解读
 3. **性别影响**：性别会影响用神的选择，请准确填写
 4. **数据保存**：仅当提供 user_id 时才会保存占卜记录到数据库
@@ -95,21 +95,19 @@
   "type": "function",
   "function": {
     "name": "perform_liuren_divination",
-    "description": "执行小六壬起卦和解卦，根据两个报数（1-6）、性别、问题类型等信息进行占卜分析。",
+    "description": "执行小六壬起卦和解卦，根据两个报数（任意正整数）、性别、问题类型等信息进行占卜分析。",
     "parameters": {
       "type": "object",
       "properties": {
         "number1": {
           "type": "integer",
           "description": "第一个报数，用于确定落宫位置",
-          "minimum": 1,
-          "maximum": 6
+          "minimum": 1
         },
         "number2": {
           "type": "integer",
           "description": "第二个报数，用于确定时辰信息",
-          "minimum": 1,
-          "maximum": 6
+          "minimum": 1
         },
         "question_type": {
           "type": "string",

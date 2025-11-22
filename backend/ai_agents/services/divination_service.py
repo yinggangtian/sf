@@ -245,11 +245,11 @@ class DivinationService:
         question_type: str
     ) -> None:
         """验证槽位完整性和合法性"""
-        # 验证报数范围
-        if not (1 <= num1 <= 6):
-            raise ValueError("第一个报数必须在 1-6 之间")
-        if not (1 <= num2 <= 6):
-            raise ValueError("第二个报数必须在 1-6 之间")
+        # 验证报数范围 (任意整数均可，算法会自动取模)
+        # if not (1 <= num1 <= 6):
+        #     raise ValueError("第一个报数必须在 1-6 之间")
+        # if not (1 <= num2 <= 6):
+        #     raise ValueError("第二个报数必须在 1-6 之间")
         
         # 验证性别
         if gender not in ["男", "女"]:

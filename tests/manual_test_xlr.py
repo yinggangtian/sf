@@ -98,8 +98,6 @@ def test_paipan():
         qigua_time=dt,
         luogong=luogong,
         shichen_info=shichen_info,
-        ti_gong=num1,
-        yong_gong=num2
     )
     
     result = engine.generate_paipan(qigua_info)

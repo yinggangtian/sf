@@ -25,6 +25,7 @@ from backend.shared.db.models.knowledge import Gong, Shou, Qin, DiZhi
 from backend.ai_agents.agents.master_agent import MasterAgent
 from backend.ai_agents.agents.orchestrator import OrchestratorAgent
 from backend.ai_agents.agents.explainer import ExplainerAgent
+from backend.ai_agents.agents.registry import AlgorithmRegistry
 from backend.ai_agents.services.divination_service import DivinationService
 from backend.ai_agents.services.rag_service import RAGService
 from backend.ai_agents.services.memory_service import MemoryService
@@ -54,6 +55,11 @@ def initialize_master_agent(db_session: Session) -> MasterAgent:
     
     # 创建各个服务
     liuren_adapter = LiurenAdapter(knowledge_base=kb)
+    
+    # 初始化算法注册表
+    algorithm_registry = AlgorithmRegistry()
+    algorithm_registry.register(liuren_adapter)
+
     divination_service = DivinationService(
         liuren_adapter=liuren_adapter,
         db_session=db_session
@@ -73,6 +79,7 @@ def initialize_master_agent(db_session: Session) -> MasterAgent:
     master_agent = MasterAgent(
         orchestrator=orchestrator,
         explainer=explainer,
+        algorithm_registry=algorithm_registry,
         divination_service=divination_service,
         rag_service=rag_service,
         memory_service=memory_service,
@@ -83,14 +90,14 @@ def initialize_master_agent(db_session: Session) -> MasterAgent:
     return master_agent
 
 
-def process_query(master_agent: MasterAgent, user_id: int, query: str):
+async def process_query(master_agent: MasterAgent, user_id: int, query: str):
     """处理用户查询"""
     print(f"📝 用户输入: {query}")
     print("-" * 60)
     
     try:
         # 调用 MasterAgent
-        result = master_agent.run(
+        result = await master_agent.run(
             user_message=query,
             user_id=user_id,
             session_id=f"cli_session_{user_id}"
@@ -121,7 +128,7 @@ def process_query(master_agent: MasterAgent, user_id: int, query: str):
         return None
 
 
-def interactive_mode(master_agent: MasterAgent):
+async def interactive_mode(master_agent: MasterAgent):
     """交互模式"""
     print("\n" + "=" * 60)
     print("🔮 六壬占卜系统 - 交互式命令行")
@@ -135,7 +142,9 @@ def interactive_mode(master_agent: MasterAgent):
     
     while True:
         try:
-            query = input("\n💬 请输入占卜请求: ").strip()
+            # 使用 asyncio.to_thread 来避免阻塞事件循环
+            query = await asyncio.to_thread(input, "\n💬 请输入占卜请求: ")
+            query = query.strip()
             
             if not query:
                 continue
@@ -152,7 +161,7 @@ def interactive_mode(master_agent: MasterAgent):
                 print("  5 2 男 财运如何")
                 continue
             
-            process_query(master_agent, test_user_id, query)
+            await process_query(master_agent, test_user_id, query)
             
         except KeyboardInterrupt:
             print("\n\n👋 再见!")
@@ -161,10 +170,10 @@ def interactive_mode(master_agent: MasterAgent):
             print(f"\n❌ 错误: {str(e)}")
 
 
-def quick_test(master_agent: MasterAgent, query: str):
+async def quick_test(master_agent: MasterAgent, query: str):
     """快速测试模式"""
     test_user_id = 1
-    process_query(master_agent, test_user_id, query)
+    await process_query(master_agent, test_user_id, query)
 
 
 def main():
@@ -180,10 +189,10 @@ def main():
         if len(sys.argv) > 1:
             # 快速测试模式
             query = " ".join(sys.argv[1:])
-            quick_test(master_agent, query)
+            asyncio.run(quick_test(master_agent, query))
         else:
             # 交互模式
-            interactive_mode(master_agent)
+            asyncio.run(interactive_mode(master_agent))
             
     finally:
         db_session.close()
