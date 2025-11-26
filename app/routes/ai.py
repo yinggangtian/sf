@@ -4,6 +4,7 @@
 
 from typing import Optional, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -112,7 +113,7 @@ async def create_divination(
     """
     try:
         # 调用 MasterAgent
-        result = master_agent.run(
+        result = await master_agent.run(
             user_message=request.message,
             user_id=request.user_id,
             session_id=request.session_id,
@@ -138,6 +139,71 @@ async def create_divination(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"服务器处理错误: {str(e)}"
+        )
+
+
+@router.post("/divination/text", response_class=PlainTextResponse)
+async def divination_text(
+    request: DivinationRequest,
+    master_agent: MasterAgent = Depends(get_master_agent),
+):
+    """
+    占卜（纯文本预览）
+    
+    返回纯 Markdown 文本，方便在 Swagger UI 里阅读调试。
+    适合开发时查看 prompt 效果。
+    
+    Args:
+        request: 占卜请求
+        master_agent: MasterAgent 实例
+        
+    Returns:
+        纯文本格式的占卜结果（Markdown）
+    """
+    try:
+        # 调用 MasterAgent
+        result = await master_agent.run(
+            user_message=request.message,
+            user_id=request.user_id,
+            session_id=request.session_id,
+            conversation_history=[]
+        )
+        
+        reply = result.get("reply", "")
+        status_text = result.get("status", "error")
+        meta = result.get("meta", {})
+        processing_time = meta.get("processing_time", 0)
+        
+        # 构建纯文本响应
+        text_response = f"""{'='*60}
+🔮 占卜结果
+{'='*60}
+
+📝 请求: {request.message}
+👤 用户ID: {request.user_id}
+📊 状态: {status_text}
+⏱️  处理时间: {processing_time:.2f}秒
+
+{'='*60}
+
+{reply}
+
+{'='*60}
+"""
+        return text_response
+        
+    except Exception as e:
+        error_text = f"""{'='*60}
+❌ 占卜失败
+{'='*60}
+
+错误信息: {str(e)}
+
+{'='*60}
+"""
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=error_text
         )
 
 

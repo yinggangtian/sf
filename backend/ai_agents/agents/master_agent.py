@@ -83,20 +83,33 @@ class MasterAgent:
         Returns:
             响应字典，包含 reply、divination_result、meta 等
         """
+        import time
+        
+        print(f"\n{'='*60}")
+        print(f"🚀 MasterAgent 开始处理: user_id={user_id}, message={user_message[:30]}...")
+        print(f"{'='*60}")
+        
         logger.info(
             "MasterAgent run: user_id=%d, session_id=%s, message_len=%d",
             user_id, session_id, len(user_message)
         )
         
         start_time = datetime.now()
+        t0 = time.time()
+        timing = {}  # 记录各阶段耗时
         
         try:
             # Step 1: Orchestrator 意图识别和槽位填充
+            t_step = time.time()
+            print("⏱️  Step 1: Orchestrator (意图识别)...", end=" ", flush=True)
             logger.info("Step 1: Calling Orchestrator")
             orchestrator_result = self.orchestrator.process(
                 user_input=user_message,
                 conversation_history=conversation_history or []
             )
+            timing['orchestrator'] = time.time() - t_step
+            print(f"✅ {timing['orchestrator']:.2f}s")
+            logger.info("[TIMING] Orchestrator: %.2fs", timing['orchestrator'])
             
             logger.debug("Orchestrator result: %s", orchestrator_result)
             
@@ -113,7 +126,7 @@ class MasterAgent:
             
             # 检查是否就绪执行
             if not orchestrator_result.get("ready_to_execute"):
-                error_msg = orchestrator_result.get("error_message", "无法理解您的问题")
+                error_msg = orchestrator_result.get("error_message") or orchestrator_result.get("clarification_message", "无法理解您的问题")
                 return {
                     "reply": error_msg,
                     "status": "error",
@@ -127,11 +140,16 @@ class MasterAgent:
             intent = orchestrator_result.get("intent", "divination")
             
             # Step 2: 调用工具执行占卜
+            t_step = time.time()
+            print("⏱️  Step 2: Divination (起卦计算)...", end=" ", flush=True)
             logger.info("Step 2: Calling tools with intent: %s", intent)
             divination_result = None
             
             if intent == "divination":
                 divination_result = self._call_divination_tool(slots, user_id)
+                timing['divination'] = time.time() - t_step
+                print(f"✅ {timing['divination']:.2f}s")
+                logger.info("[TIMING] Divination tool: %.2fs", timing['divination'])
             else:
                 return {
                     "reply": f"暂不支持 {intent} 意图",
@@ -152,12 +170,17 @@ class MasterAgent:
                 }
             
             # Step 3 & 4: 并行获取 RAG 增强和用户画像
+            t_step = time.time()
+            print("⏱️  Step 3-4: RAG + Profile (并行)...", end=" ", flush=True)
             logger.info("Step 3-4: Getting RAG enhancements and user profile in parallel")
             rag_chunks, user_profile = await asyncio.gather(
                 self._call_rag_tool_async(slots, divination_result),
                 self._call_profile_tool_async(user_id),
                 return_exceptions=True  # 失败不影响整体流程
             )
+            timing['rag_profile'] = time.time() - t_step
+            print(f"✅ {timing['rag_profile']:.2f}s")
+            logger.info("[TIMING] RAG + Profile: %.2fs", timing['rag_profile'])
             
             # 处理异常返回
             if isinstance(rag_chunks, Exception):
@@ -168,14 +191,20 @@ class MasterAgent:
                 user_profile = None
             
             # Step 5: Explainer 生成解释
+            t_step = time.time()
+            print("⏱️  Step 5: Explainer (生成解释)...", end=" ", flush=True)
             logger.info("Step 5: Calling Explainer")
             explanation = self.explainer.generate_explanation(
                 divination_result=divination_result.get("result", {}),
                 question=user_message,
                 question_type=slots.get("question_type", "综合"),
                 rag_chunks=rag_chunks,
-                user_profile=user_profile
+                user_profile=user_profile,
+                enable_judge=False  # 暂时禁用 Judge 以提高速度
             )
+            timing['explainer'] = time.time() - t_step
+            print(f"✅ {timing['explainer']:.2f}s")
+            logger.info("[TIMING] Explainer: %.2fs", timing['explainer'])
             
             # Step 6: 保存对话摘要（异步）
             logger.info("Step 6: Saving conversation summary")
@@ -188,7 +217,27 @@ class MasterAgent:
             
             # 返回完整响应
             processing_time = (datetime.now() - start_time).total_seconds()
-            logger.info("MasterAgent completed in %.2f seconds", processing_time)
+            timing['total'] = time.time() - t0
+            
+            # 打印详细时间分解
+            print(f"\n{'='*60}")
+            print("📊 [TIMING SUMMARY]")
+            print(f"   Orchestrator (意图识别): {timing.get('orchestrator', 0):.2f}s")
+            print(f"   Divination (起卦计算):   {timing.get('divination', 0):.2f}s")
+            print(f"   RAG+Profile (并行):      {timing.get('rag_profile', 0):.2f}s")
+            print(f"   Explainer (生成解释):    {timing.get('explainer', 0):.2f}s")
+            print(f"   {'─'*40}")
+            print(f"   ✅ TOTAL:                 {timing['total']:.2f}s")
+            print(f"{'='*60}\n")
+            logger.info("\n" + "="*60)
+            logger.info("[TIMING SUMMARY]")
+            logger.info("  Orchestrator (意图识别): %.2fs", timing.get('orchestrator', 0))
+            logger.info("  Divination (起卦计算):   %.2fs", timing.get('divination', 0))
+            logger.info("  RAG+Profile (并行):      %.2fs", timing.get('rag_profile', 0))
+            logger.info("  Explainer (生成解释):    %.2fs", timing.get('explainer', 0))
+            logger.info("  ----------------------------------------")
+            logger.info("  TOTAL:                   %.2fs", timing['total'])
+            logger.info("="*60 + "\n")
             
             return {
                 "reply": explanation,
@@ -198,6 +247,7 @@ class MasterAgent:
                     "intent": intent,
                     "slots": slots,
                     "session_id": session_id,
+                    "timing": timing,
                     "user_id": user_id,
                     "processing_time": processing_time,
                     "rag_used": len(rag_chunks) > 0 if rag_chunks else False,

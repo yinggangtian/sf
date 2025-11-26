@@ -27,8 +27,14 @@ class OrchestratorAgent:
         """
         settings = get_settings()
         self.api_key = api_key or settings.openai_api_key
-        self.model = settings.openai_model
-        self.client = OpenAI(api_key=self.api_key)
+        self.model = settings.openai_model_fast  # 使用快速模型做意图识别
+        self.timeout = settings.openai_timeout
+        # 关闭自动重试，避免累积等待时间
+        self.client = OpenAI(
+            api_key=self.api_key, 
+            timeout=self.timeout,
+            max_retries=0  # 关闭自动重试
+        )
         
         # 加载 system prompt
         self.system_prompt = self._load_system_prompt()

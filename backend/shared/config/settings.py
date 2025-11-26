@@ -59,7 +59,8 @@ class Settings(BaseSettings):
     
     # ==================== OpenAI 配置 ====================
     openai_api_key: str = Field(default="", description="OpenAI API密钥")
-    openai_model: str = Field(default="gpt-4o", description="OpenAI模型")
+    openai_model: str = Field(default="gpt-4o", description="OpenAI主模型")
+    openai_model_fast: str = Field(default="gpt-4o-mini", description="OpenAI快速模型(用于意图识别等轻量任务)")
     openai_temperature: float = Field(default=0.7, description="温度参数")
     openai_timeout: int = Field(default=30, description="请求超时(秒)")
     

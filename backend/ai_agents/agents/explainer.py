@@ -3,6 +3,7 @@
 """
 
 import logging
+import time
 from pathlib import Path
 from typing import Dict, Any, Optional, List
 import yaml
@@ -26,7 +27,13 @@ class ExplainerAgent:
         settings = get_settings()
         self.api_key = api_key or settings.openai_api_key
         self.model = settings.openai_model
-        self.client = OpenAI(api_key=self.api_key)
+        self.timeout = settings.openai_timeout
+        # 关闭自动重试，避免累积等待时间
+        self.client = OpenAI(
+            api_key=self.api_key, 
+            timeout=self.timeout,
+            max_retries=0  # 关闭自动重试
+        )
         self.settings = settings
         
         # 加载 system prompt
@@ -86,6 +93,9 @@ class ExplainerAgent:
         logger.info("Generating explanation for question_type: %s, judge_enabled: %s", 
                    question_type, enable_judge)
         
+        t_start = time.time()
+        timing = {}
+        
         # 组装 Prompt
         prompt = self._assemble_prompt(
             divination_result=divination_result,
@@ -97,7 +107,12 @@ class ExplainerAgent:
         
         try:
             # Step 1: 生成初稿
+            t_step = time.time()
+            print("      └─ 生成初稿...", end=" ", flush=True)
             draft = self._generate_draft(prompt)
+            timing['draft'] = time.time() - t_step
+            print(f"✅ {timing['draft']:.2f}s")
+            logger.info("[TIMING] Explainer draft: %.2fs", timing['draft'])
             
             if not draft:
                 raise ValueError("LLM 返回空内容")
@@ -106,13 +121,22 @@ class ExplainerAgent:
             
             # Step 2: LLM-as-Judge 评审（可选）
             if enable_judge:
+                t_step = time.time()
+                print("      └─ LLM Judge 评审...", end=" ", flush=True)
                 score = self._evaluate_draft(draft, question, divination_result)
-                logger.info("Draft quality score: %.2f", score)
+                timing['judge'] = time.time() - t_step
+                print(f"✅ {timing['judge']:.2f}s (score: {score:.2f})")
+                logger.info("[TIMING] Explainer judge: %.2fs (score: %.2f)", timing['judge'], score)
                 
                 # 低于 0.7 分需要重新生成
                 if score < 0.7:
+                    print(f"      └─ ⚠️ 分数低于 0.7，重新生成...", end=" ", flush=True)
                     logger.warning("Draft quality below threshold (%.2f < 0.7), regenerating...", score)
+                    t_step = time.time()
                     draft = self._regenerate(prompt, draft, score)
+                    timing['regenerate'] = time.time() - t_step
+                    print(f"✅ {timing['regenerate']:.2f}s")
+                    logger.info("[TIMING] Explainer regenerate: %.2fs", timing['regenerate'])
             
             # Step 3: 应用输出 Guardrails
             safe_explanation = self._apply_guardrails(draft)
@@ -120,7 +144,10 @@ class ExplainerAgent:
             # Step 4: 添加免责声明
             final_explanation = self._add_disclaimer(safe_explanation)
             
-            logger.info("Explanation generated successfully: %d chars", len(final_explanation))
+            timing['total'] = time.time() - t_start
+            print(f"      └─ Explainer 总计: {timing['total']:.2f}s")
+            logger.info("[TIMING] Explainer total: %.2fs (draft: %.2fs, judge: %.2fs)", 
+                       timing['total'], timing.get('draft', 0), timing.get('judge', 0))
             
             return final_explanation
             
@@ -145,7 +172,7 @@ class ExplainerAgent:
                 {"role": "user", "content": prompt}
             ],
             temperature=0.7,
-            max_tokens=2000
+            max_tokens=800  # 减少输出长度，提高速度
         )
         
         return response.choices[0].message.content or ""

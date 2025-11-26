@@ -13,6 +13,7 @@ from backend.shared.db.models.knowledge import Gong, Shou, Qin, DiZhi
 from backend.ai_agents.agents.master_agent import MasterAgent
 from backend.ai_agents.agents.orchestrator import OrchestratorAgent
 from backend.ai_agents.agents.explainer import ExplainerAgent
+from backend.ai_agents.agents.registry import AlgorithmRegistry
 from backend.ai_agents.services.divination_service import DivinationService
 from backend.ai_agents.services.rag_service import RAGService
 from backend.ai_agents.services.memory_service import MemoryService
@@ -74,7 +75,6 @@ async def get_current_user(
     # if not user:
     #     raise HTTPException(status_code=401, detail="用户不存在")
     # return user
-    
     return None
 
 
@@ -105,6 +105,10 @@ def get_master_agent(db: Session = Depends(get_db)) -> MasterAgent:
     # 初始化算法适配器
     liuren_adapter = LiurenAdapter(knowledge_base=kb)
     
+    # 初始化算法注册表
+    algorithm_registry = AlgorithmRegistry()
+    algorithm_registry.register(liuren_adapter)
+    
     # 初始化服务层
     divination_service = DivinationService(
         liuren_adapter=liuren_adapter,
@@ -121,10 +125,11 @@ def get_master_agent(db: Session = Depends(get_db)) -> MasterAgent:
     master_agent = MasterAgent(
         orchestrator=orchestrator,
         explainer=explainer,
+        algorithm_registry=algorithm_registry,
         divination_service=divination_service,
         rag_service=rag_service,
         memory_service=memory_service,
-        tool_timeout=10.0
+        tool_timeout=30.0
     )
     
     return master_agent
