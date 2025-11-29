@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     debug: bool = Field(default=True, description="调试模式")
     
     # ==================== 数据库配置 ====================
+    database_url_env: Optional[str] = Field(default=None, alias="DATABASE_URL", description="完整的数据库连接URL (优先使用)")
     db_host: str = Field(default="localhost", description="数据库主机")
     db_port: int = Field(default=5432, description="数据库端口")
     db_name: str = Field(default="xiaoliuren", description="数据库名称")
@@ -36,9 +37,12 @@ class Settings(BaseSettings):
     @property
     def database_url(self) -> str:
         """数据库连接URL"""
+        if self.database_url_env:
+            return self.database_url_env
         return f"postgresql://{self.db_user}:{self.db_password}@{self.db_host}:{self.db_port}/{self.db_name}"
     
     # ==================== Redis 缓存配置 ====================
+    redis_url_env: Optional[str] = Field(default=None, alias="REDIS_URL", description="完整的Redis连接URL (优先使用)")
     redis_host: str = Field(default="localhost", description="Redis主机")
     redis_port: int = Field(default=6379, description="Redis端口")
     redis_db: int = Field(default=0, description="Redis数据库编号")
@@ -48,8 +52,11 @@ class Settings(BaseSettings):
     @property
     def redis_url(self) -> str:
         """Redis连接URL"""
-        password_part = f":{self.redis_password}@" if self.redis_password else ""
-        return f"redis://{password_part}{self.redis_host}:{self.redis_port}/{self.redis_db}"
+        if self.redis_url_env:
+            return self.redis_url_env
+        if self.redis_password:
+            return f"redis://:{self.redis_password}@{self.redis_host}:{self.redis_port}/{self.redis_db}"
+        return f"redis://{self.redis_host}:{self.redis_port}/{self.redis_db}"
     
     # ==================== 缓存 TTL 配置 ====================
     kb_cache_ttl: int = Field(default=3600, description="知识库缓存TTL(秒)")

@@ -19,10 +19,9 @@ app = FastAPI(
 - 📝 完整的占卜历史记录
 - 🔐 用户认证与权限管理
 
-### 主要接口
-- `/ai/divination` - 执行占卜
-- `/ai/history/{user_id}` - 查询历史记录
-- `/health` - 健康检查
+### 主要接口（OpenAI Responses API 格式）
+- `POST /v1/responses` - 执行占卜
+- `GET /health` - 健康检查
 
 ### 技术栈
 - FastAPI + SQLAlchemy
