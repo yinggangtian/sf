@@ -3,7 +3,7 @@
 处理起卦、排盘的完整业务流程，协调算法引擎和数据持久化
 """
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
 from sqlalchemy.orm import Session
 
@@ -256,7 +256,15 @@ class DivinationService:
             raise ValueError("性别必须是 '男' 或 '女'")
         
         # 验证时间
-        if ask_time > datetime.now():
+        # 确保 ask_time 是 offset-aware 的
+        if ask_time.tzinfo is None:
+            ask_time = ask_time.astimezone()
+            
+        # 获取当前时间（带时区）
+        now = datetime.now(ask_time.tzinfo)
+        
+        # 允许 1 分钟的误差
+        if ask_time > now + timedelta(minutes=1):
             raise ValueError("起卦时间不能是未来时间")
         
         # 验证问题类型
@@ -395,7 +403,8 @@ class DivinationService:
             排盘结果
         """
         if qigua_time is None:
-            qigua_time = datetime.now()
+            # 使用系统当前时区时间
+            qigua_time = datetime.now().astimezone()
             
         request = QiguaRequest(
             number1=num1,

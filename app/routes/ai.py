@@ -5,7 +5,7 @@
 """
 
 from typing import Optional, Dict, Any, List, Union, Literal, cast
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from pydantic import BaseModel, Field
 import uuid
 import time
@@ -13,6 +13,7 @@ import time
 from app.dependencies import get_current_user, get_master_agent
 from backend.shared.db.models.user import User
 from backend.ai_agents.agents.master_agent import MasterAgent
+from backend.shared.utils.geo_utils import get_client_ip, ip_to_location, get_local_time_and_utc_offset
 
 
 router = APIRouter(prefix="/v1", tags=["AI Agent"])
@@ -113,6 +114,7 @@ class ResponseOutput(BaseModel):
 @router.post("/responses", response_model=ResponseOutput)
 async def create_response(
     request: ResponseRequest,
+    http_request: Request,
     master_agent: MasterAgent = Depends(get_master_agent),
     current_user: Optional[User] = Depends(get_current_user)
 ):
@@ -127,6 +129,7 @@ async def create_response(
     
     Args:
         request: OpenAI Responses API 格式请求
+        http_request: 原始 HTTP 请求（用于获取 IP）
         master_agent: MasterAgent 实例
         current_user: 当前用户（可选）
         
@@ -137,6 +140,17 @@ async def create_response(
         HTTPException: 400 请求错误、500 服务器错误
     """
     try:
+        # 尝试获取客户端地理位置和时间信息
+        client_ip = await get_client_ip(http_request)
+        location_info = await ip_to_location(client_ip)
+        
+        # 如果成功获取时区，计算当地时间
+        local_time_iso = None
+        if location_info.get("status") == "success":
+            timezone_str = location_info.get("timezone")
+            local_time, _ = get_local_time_and_utc_offset(timezone_str)
+            local_time_iso = local_time.isoformat()
+            
         # 解析输入
         if isinstance(request.input, str):
             user_message = request.input
@@ -159,11 +173,19 @@ async def create_response(
             user_id = cast(int, current_user.id)
         
         # 调用 MasterAgent
+        # 将地理位置时间信息注入到上下文中，供 Orchestrator 使用
+        context_data = {
+            "client_ip": client_ip,
+            "location": location_info,
+            "local_time": local_time_iso
+        }
+        
         result = await master_agent.run(
             user_message=user_message,
             user_id=user_id,
             session_id=request.session_id,
-            conversation_history=conversation_history
+            conversation_history=conversation_history,
+            context_data=context_data  # 传递上下文数据
         )
         
         # 转换为 OpenAI Responses API 格式

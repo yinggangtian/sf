@@ -69,7 +69,8 @@ class MasterAgent:
         user_message: str,
         user_id: int,
         session_id: Optional[str] = None,
-        conversation_history: Optional[list] = None
+        conversation_history: Optional[list] = None,
+        context_data: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """
         执行完整对话流程
@@ -79,6 +80,7 @@ class MasterAgent:
             user_id: 用户 ID
             session_id: 会话 ID（可选）
             conversation_history: 对话历史（可选）
+            context_data: 上下文数据（可选，如地理位置、时间等）
             
         Returns:
             响应字典，包含 reply、divination_result、meta 等
@@ -87,6 +89,8 @@ class MasterAgent:
         
         print(f"\n{'='*60}")
         print(f"🚀 MasterAgent 开始处理: user_id={user_id}, message={user_message[:30]}...")
+        if context_data:
+            print(f"🌍 上下文数据: {context_data}")
         print(f"{'='*60}")
         
         logger.info(
@@ -105,7 +109,8 @@ class MasterAgent:
             logger.info("Step 1: Calling Orchestrator")
             orchestrator_result = self.orchestrator.process(
                 user_input=user_message,
-                conversation_history=conversation_history or []
+                conversation_history=conversation_history or [],
+                context_data=context_data  # 传递上下文数据
             )
             timing['orchestrator'] = time.time() - t_step
             print(f"✅ {timing['orchestrator']:.2f}s")
@@ -244,7 +249,7 @@ class MasterAgent:
                 "status": "success",
                 "divination_result": divination_result.get("result", {}),
                 "meta": {
-                    "intent": intent,
+                    "intent": intent, 
                     "slots": slots,
                     "session_id": session_id,
                     "timing": timing,

@@ -88,7 +88,8 @@ class OrchestratorAgent:
         user_input: str,
         conversation_history: Optional[List[Dict[str, str]]] = None,
         current_slots: Optional[Dict[str, Any]] = None,
-        follow_up_count: int = 0
+        follow_up_count: int = 0,
+        context_data: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """
         处理用户输入，进行意图识别和槽位填充（含输入 Guardrails）
@@ -98,6 +99,7 @@ class OrchestratorAgent:
             conversation_history: 对话历史（可选）
             current_slots: 当前已填充的槽位（可选）
             follow_up_count: 当前追问次数
+            context_data: 上下文数据（可选，如地理位置、时间等）
             
         Returns:
             包含意图、槽位、追问信息的字典
@@ -119,7 +121,7 @@ class OrchestratorAgent:
             return self._create_max_follow_ups_response()
         
         # 构建上下文提示
-        context_prompt = self._build_context_prompt(current_slots, follow_up_count)
+        context_prompt = self._build_context_prompt(current_slots, follow_up_count, context_data)
         
         # 构建消息列表
         messages = [
@@ -149,7 +151,7 @@ class OrchestratorAgent:
             result = json.loads(result_text)
             
             # 验证和标准化结果
-            normalized_result = self._normalize_result(result, follow_up_count)
+            normalized_result = self._normalize_result(result, follow_up_count, context_data)
             
             # 如果需要追问，生成追问消息
             if normalized_result.get("clarification_needed"):
@@ -172,9 +174,22 @@ class OrchestratorAgent:
             logger.error("Error during LLM call: %s", e)
             return self._create_error_response("处理失败，请稍后重试")
     
-    def _build_context_prompt(self, current_slots: Optional[Dict[str, Any]], follow_up_count: int) -> str:
+    def _build_context_prompt(
+        self, 
+        current_slots: Optional[Dict[str, Any]], 
+        follow_up_count: int,
+        context_data: Optional[Dict[str, Any]] = None
+    ) -> str:
         """构建上下文提示"""
         context = ""
+        
+        if context_data:
+            context += f"\n\n【环境上下文】\n"
+            if context_data.get("local_time"):
+                context += f"- 用户当地时间: {context_data['local_time']}\n"
+            if context_data.get("location"):
+                loc = context_data["location"]
+                context += f"- 用户位置: {loc.get('country', '')} {loc.get('region', '')} {loc.get('city', '')}\n"
         
         if current_slots:
             context += f"\n\n当前已收集的槽位信息：\n{json.dumps(current_slots, ensure_ascii=False, indent=2)}"
@@ -184,7 +199,12 @@ class OrchestratorAgent:
         
         return context
     
-    def _normalize_result(self, result: Dict[str, Any], follow_up_count: int) -> Dict[str, Any]:
+    def _normalize_result(
+        self, 
+        result: Dict[str, Any], 
+        follow_up_count: int,
+        context_data: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
         """标准化和验证 LLM 返回结果"""
         normalized = {
             "intent": result.get("intent", "divination"),
@@ -248,7 +268,14 @@ class OrchestratorAgent:
         
         # 设置默认值
         if "ask_time" not in slots or not slots["ask_time"]:
-            slots["ask_time"] = datetime.now().isoformat()
+            # 优先使用上下文中的当地时间
+            if context_data and context_data.get("local_time"):
+                slots["ask_time"] = context_data["local_time"]
+                print(f"qigua_time (from context) = {slots['ask_time']}")
+            else:
+                # 降级到系统当前时区时间
+                slots["ask_time"] = datetime.now().astimezone().isoformat()
+                print(f"qigua_time (system) = {slots['ask_time']}")
         
         if "question_type" not in slots or not slots["question_type"]:
             slots["question_type"] = "综合"

@@ -141,7 +141,10 @@ class LiurenAdapter(AlgorithmAdapter):
         """执行起卦操作"""
         num1 = inputs["number1"]
         num2 = inputs["number2"]
-        qigua_time = inputs.get("qigua_time", datetime.now())
+        
+        # 默认使用系统当前时区时间
+        default_time = datetime.now().astimezone()
+        qigua_time = inputs.get("qigua_time", default_time)
         
         # 如果 qigua_time 是字符串，转换为 datetime
         if isinstance(qigua_time, str):
