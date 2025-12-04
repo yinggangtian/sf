@@ -33,11 +33,13 @@ from backend.ai_agents.xlr.adapters.liuren_adapter import LiurenAdapter
 from backend.ai_agents.xlr.liuren.utils import KnowledgeBase
 from backend.ai_agents.rag.retriever import Retriever
 from backend.ai_agents.rag.embedder import Embedder
+from backend.shared.config.settings import get_settings
 
 
 def initialize_master_agent(db_session: Session) -> MasterAgent:
     """初始化 MasterAgent"""
     print("🔧 初始化占卜系统...")
+    app_settings = get_settings()
     
     # 加载知识库数据
     kb = KnowledgeBase()
@@ -65,12 +67,16 @@ def initialize_master_agent(db_session: Session) -> MasterAgent:
         db_session=db_session
     )
     
-    embedder = Embedder()
-    retriever = Retriever(embedder=embedder)
-    rag_service = RAGService(
-        retriever=retriever,
-        db_session=db_session
-    )
+    rag_service = None
+    if app_settings.rag_enable:
+        embedder = Embedder()
+        retriever = Retriever(embedder=embedder)
+        rag_service = RAGService(
+            retriever=retriever,
+            db_session=db_session
+        )
+    else:
+        print("  ⚠️ 已禁用 RAG，跳过知识检索初始化")
     
     memory_service = MemoryService(db_session=db_session)
     orchestrator = OrchestratorAgent()
@@ -83,7 +89,8 @@ def initialize_master_agent(db_session: Session) -> MasterAgent:
         divination_service=divination_service,
         rag_service=rag_service,
         memory_service=memory_service,
-        tool_timeout=30.0
+        tool_timeout=30.0,
+        enable_rag=app_settings.rag_enable
     )
     
     print("  ✓ MasterAgent 初始化完成\n")

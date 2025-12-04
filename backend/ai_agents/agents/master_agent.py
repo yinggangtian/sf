@@ -3,7 +3,7 @@
 """
 
 import logging
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List, cast
 from datetime import datetime
 import asyncio
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
@@ -30,9 +30,10 @@ class MasterAgent:
         explainer: ExplainerAgent,
         algorithm_registry: AlgorithmRegistry,
         divination_service: DivinationService,
-        rag_service: RAGService,
+        rag_service: Optional[RAGService],
         memory_service: MemoryService,
-        tool_timeout: float = 10.0
+        tool_timeout: float = 10.0,
+        enable_rag: bool = True
     ):
         """
         初始化 MasterAgent
@@ -42,20 +43,25 @@ class MasterAgent:
             explainer: Explainer Agent 实例
             algorithm_registry: 算法注册表实例
             divination_service: 占卜服务实例
-            rag_service: RAG 服务实例
+            rag_service: RAG 服务实例（可选，禁用时可为 None）
             memory_service: 记忆服务实例
             tool_timeout: 工具调用超时时间（秒，默认 10 秒）
+            enable_rag: 是否启用 RAG（默认启用）
         """
         self.orchestrator = orchestrator
         self.explainer = explainer
         self.algorithm_registry = algorithm_registry
         self.divination_service = divination_service
-        self.rag_service = rag_service
+        self.rag_enabled = enable_rag and rag_service is not None
+        self.rag_service = rag_service if self.rag_enabled else None
         self.memory_service = memory_service
         self.tool_timeout = tool_timeout
         
         # 初始化工具
-        self.rag_tool = RAGTool(rag_service=rag_service)
+        if self.rag_service is not None:
+            self.rag_tool = RAGTool(rag_service=self.rag_service)
+        else:
+            self.rag_tool = None
         self.profile_tool = ProfileTool(memory_service=memory_service)
         self.history_tool = HistoryTool(divination_service=divination_service)
         
@@ -175,25 +181,40 @@ class MasterAgent:
                 }
             
             # Step 3 & 4: 并行获取 RAG 增强和用户画像
-            t_step = time.time()
-            print("⏱️  Step 3-4: RAG + Profile (并行)...", end=" ", flush=True)
-            logger.info("Step 3-4: Getting RAG enhancements and user profile in parallel")
-            rag_chunks, user_profile = await asyncio.gather(
-                self._call_rag_tool_async(slots, divination_result),
-                self._call_profile_tool_async(user_id),
-                return_exceptions=True  # 失败不影响整体流程
-            )
-            timing['rag_profile'] = time.time() - t_step
-            print(f"✅ {timing['rag_profile']:.2f}s")
-            logger.info("[TIMING] RAG + Profile: %.2fs", timing['rag_profile'])
-            
-            # 处理异常返回
-            if isinstance(rag_chunks, Exception):
-                logger.error("RAG tool failed with exception: %s", rag_chunks)
-                rag_chunks = None
-            if isinstance(user_profile, Exception):
-                logger.error("Profile tool failed with exception: %s", user_profile)
-                user_profile = None
+            rag_chunks: Optional[List[Dict[str, Any]]] = None
+            user_profile: Optional[Dict[str, Any]] = None
+            if self.rag_enabled:
+                t_step = time.time()
+                print("⏱️  Step 3-4: RAG + Profile (并行)...", end=" ", flush=True)
+                logger.info("Step 3-4: Getting RAG enhancements and user profile in parallel")
+                rag_result, profile_result = await asyncio.gather(
+                    self._call_rag_tool_async(slots, divination_result),
+                    self._call_profile_tool_async(user_id),
+                    return_exceptions=True  # 失败不影响整体流程
+                )
+                timing['rag_profile'] = time.time() - t_step
+                print(f"✅ {timing['rag_profile']:.2f}s")
+                logger.info("[TIMING] RAG + Profile: %.2fs", timing['rag_profile'])
+                if isinstance(rag_result, Exception):
+                    logger.error("RAG tool failed with exception: %s", rag_result)
+                else:
+                    rag_chunks = cast(Optional[List[Dict[str, Any]]], rag_result)
+                if isinstance(profile_result, Exception):
+                    logger.error("Profile tool failed with exception: %s", profile_result)
+                else:
+                    user_profile = cast(Optional[Dict[str, Any]], profile_result)
+            else:
+                t_step = time.time()
+                print("⏱️  Step 3: Profile (用户画像)...", end=" ", flush=True)
+                logger.info("Step 3: RAG disabled; fetching user profile only")
+                try:
+                    profile_result = await self._call_profile_tool_async(user_id)
+                    user_profile = cast(Optional[Dict[str, Any]], profile_result)
+                except Exception as exc:
+                    logger.error("Profile tool failed with exception: %s", exc)
+                timing['profile'] = time.time() - t_step
+                print(f"✅ {timing['profile']:.2f}s")
+                logger.info("[TIMING] Profile only: %.2fs", timing['profile'])
             
             # Step 5: Explainer 生成解释
             t_step = time.time()
@@ -229,7 +250,10 @@ class MasterAgent:
             print("📊 [TIMING SUMMARY]")
             print(f"   Orchestrator (意图识别): {timing.get('orchestrator', 0):.2f}s")
             print(f"   Divination (起卦计算):   {timing.get('divination', 0):.2f}s")
-            print(f"   RAG+Profile (并行):      {timing.get('rag_profile', 0):.2f}s")
+            if self.rag_enabled:
+                print(f"   RAG+Profile (并行):      {timing.get('rag_profile', 0):.2f}s")
+            else:
+                print(f"   Profile (用户画像):       {timing.get('profile', 0):.2f}s")
             print(f"   Explainer (生成解释):    {timing.get('explainer', 0):.2f}s")
             print(f"   {'─'*40}")
             print(f"   ✅ TOTAL:                 {timing['total']:.2f}s")
@@ -238,7 +262,10 @@ class MasterAgent:
             logger.info("[TIMING SUMMARY]")
             logger.info("  Orchestrator (意图识别): %.2fs", timing.get('orchestrator', 0))
             logger.info("  Divination (起卦计算):   %.2fs", timing.get('divination', 0))
-            logger.info("  RAG+Profile (并行):      %.2fs", timing.get('rag_profile', 0))
+            if self.rag_enabled:
+                logger.info("  RAG+Profile (并行):      %.2fs", timing.get('rag_profile', 0))
+            else:
+                logger.info("  Profile (用户画像):       %.2fs", timing.get('profile', 0))
             logger.info("  Explainer (生成解释):    %.2fs", timing.get('explainer', 0))
             logger.info("  ----------------------------------------")
             logger.info("  TOTAL:                   %.2fs", timing['total'])
@@ -352,7 +379,7 @@ class MasterAgent:
         self,
         slots: Dict[str, Any],
         divination_result: Dict[str, Any]
-    ) -> Optional[list]:
+    ) -> Optional[List[Dict[str, Any]]]:
         """
         调用 RAG 工具（带超时保护和降级）
         
@@ -363,6 +390,10 @@ class MasterAgent:
         Returns:
             RAG chunks 列表或 None
         """
+        if not self.rag_enabled or not self.rag_tool:
+            logger.info("RAG disabled or unavailable, skipping search")
+            return None
+
         try:
             # 构建检索关键词
             keywords = []
@@ -433,7 +464,7 @@ class MasterAgent:
         self,
         slots: Dict[str, Any],
         divination_result: Dict[str, Any]
-    ) -> Optional[list]:
+    ) -> Optional[List[Dict[str, Any]]]:
         """
         异步调用 RAG 工具（用于并行执行）
         
@@ -444,6 +475,8 @@ class MasterAgent:
         Returns:
             RAG chunks 列表或 None
         """
+        if not self.rag_enabled:
+            return None
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(
             self.executor,

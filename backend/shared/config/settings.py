@@ -72,6 +72,7 @@ class Settings(BaseSettings):
     openai_timeout: int = Field(default=30, description="请求超时(秒)")
     
     # ==================== RAG 配置 ====================
+    rag_enable: bool = Field(default=False, description="是否启用RAG功能")
     embedding_model: str = Field(default="text-embedding-3-large", description="向量化模型")
     rag_top_k: int = Field(default=5, description="RAG检索Top-K")
     rag_score_threshold: float = Field(default=0.7, description="RAG相似度阈值")

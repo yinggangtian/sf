@@ -19,10 +19,12 @@ from backend.ai_agents.services.rag_service import RAGService
 from backend.ai_agents.services.memory_service import MemoryService
 from backend.ai_agents.xlr.adapters.liuren_adapter import LiurenAdapter
 from backend.ai_agents.xlr.liuren.utils import KnowledgeBase
+from backend.shared.config.settings import get_settings
 
 
 # HTTP Bearer 认证
 security = HTTPBearer(auto_error=False)
+settings = get_settings()
 
 
 def get_db() -> Generator[Session, None, None]:
@@ -114,7 +116,7 @@ def get_master_agent(db: Session = Depends(get_db)) -> MasterAgent:
         liuren_adapter=liuren_adapter,
         db_session=db
     )
-    rag_service = RAGService(db_session=db)
+    rag_service = RAGService(db_session=db) if settings.rag_enable else None
     memory_service = MemoryService(db_session=db)
     
     # 初始化 Agent
@@ -129,7 +131,8 @@ def get_master_agent(db: Session = Depends(get_db)) -> MasterAgent:
         divination_service=divination_service,
         rag_service=rag_service,
         memory_service=memory_service,
-        tool_timeout=30.0
+        tool_timeout=30.0,
+        enable_rag=settings.rag_enable
     )
     
     return master_agent
